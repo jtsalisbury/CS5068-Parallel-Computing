@@ -35,11 +35,11 @@ struct DataBlock {
     float *dev_total_force;
     float *dev_total_force_reduced;
 
-    point *sim_points_in[CONST_MAX_NUM_POINTS];
-    point *sim_points_out[CONST_MAX_NUM_POINTS];
-    float *total_force[CONST_MAX_NUM_POINTS * CONST_MAX_NUM_POINTS];
-    float *total_force_reduced[CONST_MAX_NUM_POINTS];
-}
+    point sim_points_in[CONST_MAX_NUM_POINTS];
+    point sim_points_out[CONST_MAX_NUM_POINTS];
+    float total_force[CONST_MAX_NUM_POINTS * CONST_MAX_NUM_POINTS];
+    float total_force_reduced[CONST_MAX_NUM_POINTS];
+};
 
 //TODO
 // parse csv file 
@@ -47,10 +47,8 @@ struct DataBlock {
 variable names: id, x_pos, x_vel, y_pos, y_vel, mass
 output: vector (in order above) of the elements 
 */
-std::vector<point> parse_input(std::string filename) {
-    std::vector<point> out;
+void parse_input() {
 
-    return out;
 }
 
 // physics helper functions
@@ -118,7 +116,6 @@ __global__ void update_sim_points(float * total_force_reduced, point * sim_point
 
     // placeholders
     float y_pos1 = 2.0f;//sim_points_in[k].y_pos;
-    float y_vel1 = 2.0f;//sim_points_in[k].y_vel;
     
     // update the acceleration
     float acceleration = compute_acceleration(m1, total_force_reduced[k]);
@@ -130,7 +127,7 @@ __global__ void update_sim_points(float * total_force_reduced, point * sim_point
     float updated_pos_x = compute_updated_pos(x_pos1, x_vel1, acceleration);
     
     // placeholder
-    float updated_pos_y = 2.0f;//compute_updated_pos(x_pos1, x_vel1, acceleration);
+    float updated_pos_y = 2.0f;//compute_updated_pos(y_pos1, y_vel1, acceleration);
 
     // store updated position and velocity
     sim_points_out[k].mass = m1;
@@ -172,10 +169,10 @@ void generate_frame(DataBlock *d, int ticks) {
         float running_sum = 0;
         for (int i = 0; i < CONST_MAX_NUM_POINTS; i++) {
             // add together all forces from every object
-            running_sum += d->total_force[k * CONST_MAX_NUM_POINTS + i];
-        }
+            running_sum += (d->total_force)[k * CONST_MAX_NUM_POINTS + i];
+        } 
         // store the resulting total force in a new array
-        d->total_force_reduced[k] = running_sum;
+        (d->total_force_reduced)[k] = running_sum;
     }
 
     // copy the total force array to the GPU
@@ -208,20 +205,9 @@ void cleanup(DataBlock *d) {
 // TODO
 // main function to perform physic operations 
 int main() {
-    //std::vector<point> inputPoints = parse_input("");
-
-    // define array to insert information from the csv file into 
-    // CPU side
-    point sim_points_in[CONST_MAX_NUM_POINTS];
-    point sim_points_out[CONST_MAX_NUM_POINTS];
-    float total_force[CONST_MAX_NUM_POINTS * CONST_MAX_NUM_POINTS];
-    float total_force_reduced[CONST_MAX_NUM_POINTS];
+    //Note: when parsing input, put it in the data.sim_points_in array
 
     DataBlock data;
-    data.sim_points_in = &sim_points_in;
-    data.sim_points_out = &sim_points_out;
-    data.total_force = &total_force;
-    data.total_force_reduced = &total_force_reduced;
 
     CPUAnimBitmap bitmap(DIM, DIM, &data);
     data.bitmap = &bitmap;
