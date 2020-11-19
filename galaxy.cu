@@ -35,10 +35,10 @@ struct DataBlock {
     float *dev_total_force;
     float *dev_total_force_reduced;
 
-    point *sim_points_in;
-    point *sim_points_out;
-    float *total_force;
-    float *total_force_reduced;
+    point *sim_points_in[CONST_MAX_NUM_POINTS];
+    point *sim_points_out[CONST_MAX_NUM_POINTS];
+    float *total_force[CONST_MAX_NUM_POINTS * CONST_MAX_NUM_POINTS];
+    float *total_force_reduced[CONST_MAX_NUM_POINTS];
 }
 
 //TODO
@@ -48,7 +48,7 @@ variable names: id, x_pos, x_vel, y_pos, y_vel, mass
 output: vector (in order above) of the elements 
 */
 std::vector<point> parse_input(std::string filename) {
-    vector<point> out;
+    std::vector<point> out;
 
     return out;
 }
@@ -118,7 +118,7 @@ __global__ void update_sim_points(float * total_force_reduced, point * sim_point
 
     // placeholders
     float y_pos1 = 2.0f;//sim_points_in[k].y_pos;
-    float x_vel1 = 2.0f;//sim_points_in[k].y_vel;
+    float y_vel1 = 2.0f;//sim_points_in[k].y_vel;
     
     // update the acceleration
     float acceleration = compute_acceleration(m1, total_force_reduced[k]);
@@ -139,16 +139,16 @@ __global__ void update_sim_points(float * total_force_reduced, point * sim_point
 
     // update the bitmap
     int oldOffset = x_pos1 + y_pos1 * gridDim.x;
-    bitmap[offset*4 + 0] = 0;
-    bitmap[offset*4 + 1] = 0;
-    bitmap[offset*4 + 2] = 0;
-    bitmap[offset*4 + 3] = 0;
+    bitmap[oldOffset*4 + 0] = 0;
+    bitmap[oldOffset*4 + 1] = 0;
+    bitmap[oldOffset*4 + 2] = 0;
+    bitmap[oldOffset*4 + 3] = 0;
 
     int newOffset = updated_pos_x + updated_pos_y * gridDim.x;
-    bitmap[offset*4 + 0] = 255;
-    bitmap[offset*4 + 1] = 255;
-    bitmap[offset*4 + 2] = 255;
-    bitmap[offset*4 + 3] = 255;
+    bitmap[newOffset*4 + 0] = 255;
+    bitmap[newOffset*4 + 1] = 255;
+    bitmap[newOffset*4 + 2] = 255;
+    bitmap[newOffset*4 + 3] = 255;
 }
 
 // animation stuff
@@ -172,10 +172,10 @@ void generate_frame(DataBlock *d, int ticks) {
         float running_sum = 0;
         for (int i = 0; i < CONST_MAX_NUM_POINTS; i++) {
             // add together all forces from every object
-            running_sum += total_force[k * CONST_MAX_NUM_POINTS + i];
+            running_sum += d->total_force[k * CONST_MAX_NUM_POINTS + i];
         }
         // store the resulting total force in a new array
-        total_force_reduced[k] = running_sum;
+        d->total_force_reduced[k] = running_sum;
     }
 
     // copy the total force array to the GPU
