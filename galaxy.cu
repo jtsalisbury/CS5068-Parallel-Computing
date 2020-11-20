@@ -47,8 +47,40 @@ struct DataBlock {
 variable names: id, x_pos, x_vel, y_pos, y_vel, mass
 output: vector (in order above) of the elements 
 */
-void parse_input() {
 
+// reference: http://www.cplusplus.com/forum/beginner/193916/
+void print_points(Points p){
+    std::cout << p.id << " "<< p.x_pos << " " << p.x_vel << " " << p.y_pos << " " << p.y_vel << " " << p.mass << "\n";
+}
+
+void parse_input() {
+    //read file
+    std::ifstream data("particles.csv");
+    if (!data.is_open())
+    {
+        exit(EXIT_FAILURE);
+    }
+    std::string str;
+    // getline(data, str); // skip the first line
+
+    std::vector<Points> my_points;
+    int id;
+    float x_pos;
+    float x_vel;
+    float y_pos;
+    float y_vel;
+    float mass;
+    char delimiter;
+
+    data.ignore(1000, '\n'); //ignore first line
+    while(data >> id >> delimiter >> x_pos >> delimiter >> x_vel >> delimiter >> y_pos >> delimiter >> y_vel >> delimiter >> mass){
+        my_points.push_back({id, x_pos, x_vel, y_pos, y_vel, mass}); //this line is causing issues
+    }
+
+    std::cout << "ID" << " X_POS" << " \n";
+    for(int x(0); x<my_points.size(); ++x){
+        print_points(my_points.at(x)); 
+    }
 }
 
 // physics helper functions
