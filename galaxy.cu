@@ -115,7 +115,7 @@ __device__ float compute_updated_velocity(float vel, float acceleration) {
 }
 
 // TODO: only performs x-component work so far, need to add y-component
-__global__ void calculate_all_forces(point * sim_points_in, float * total_force) {
+__global__ void calculate_all_forces(std::vector<point> *sim_points_in, std::vector<float> *total_force) {
 	// get the ids for each block and thread
 	int k = blockIdx.x;
 	int i = threadIdx.x;
@@ -147,7 +147,7 @@ __global__ void calculate_all_forces(point * sim_points_in, float * total_force)
 	
 }
 
-__global__ void update_sim_points(float * total_force_reduced, point * sim_points_in, point * sim_points_out, unsigned char * bitmap) {
+__global__ void update_sim_points(std::vector<float> *total_force_reduced, std::vector<point> *sim_points_in, std::vector<point> *sim_points_out, unsigned char *bitmap) {
     // get the ids for each block and thread
     int k = blockIdx.x;
 
@@ -204,7 +204,7 @@ void generate_frame(DataBlock *d, int ticks) {
     int numPoints = d->sim_points_in.size();
 
     // copy simulation point array to GPU
-    HANDLE_ERROR( cudaMemcpy( d->dev_sim_points_in, d->sim_points_in, numPoints * sizeof(point), mcudaMemcpyHostToDevice ) );
+    HANDLE_ERROR( cudaMemcpy( d->dev_sim_points_in, d->sim_points_in, numPoints * sizeof(point), cudaMemcpyHostToDevice ) );
 
     // run kernel - calculate all forces on every body in the simulation
     calculate_all_forces<<<numPoints, numPoints>>>(d->dev_sim_points_in, d->dev_total_force);
