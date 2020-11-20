@@ -15,14 +15,15 @@ Parallel Computing 6068
 #define CONST_TIME 1
 #define CONST_MAX_NUM_POINTS 50
 #define DIM 1024
+#define TIME_OFFSET 10
 
 // define structure containing all attributes of a simulation point
 struct point {
 	int id;
 	float x_pos;
 	float x_vel;
-    //float y_pos;
-    //float y_vel;
+    float y_pos;
+    float y_vel;
     float mass;
 };
 
@@ -49,7 +50,7 @@ output: vector (in order above) of the elements
 */
 
 // reference: http://www.cplusplus.com/forum/beginner/193916/
-void print_points(Points p){
+void print_points(point p){
     std::cout << p.id << " "<< p.x_pos << " " << p.x_vel << " " << p.y_pos << " " << p.y_vel << " " << p.mass << "\n";
 }
 
@@ -63,7 +64,7 @@ void parse_input() {
     std::string str;
     // getline(data, str); // skip the first line
 
-    std::vector<Points> my_points;
+    std::vector<point> my_points;
     int id;
     float x_pos;
     float x_vel;
@@ -74,7 +75,15 @@ void parse_input() {
 
     data.ignore(1000, '\n'); //ignore first line
     while(data >> id >> delimiter >> x_pos >> delimiter >> x_vel >> delimiter >> y_pos >> delimiter >> y_vel >> delimiter >> mass){
-        my_points.push_back({id, x_pos, x_vel, y_pos, y_vel, mass}); //this line is causing issues
+        point p;
+        p.id;
+        p.x_pos;
+        p.x_vel;
+        p.y_pos;
+        p.y_vel;
+        p.mass;
+
+        my_points.push_back(p); //this line is causing issues
     }
 
     std::cout << "ID" << " X_POS" << " \n";
@@ -165,23 +174,32 @@ __global__ void update_sim_points(float * total_force_reduced, point * sim_point
     sim_points_out[k].mass = m1;
     sim_points_out[k].x_vel = updated_vel;
     sim_points_out[k].x_pos = updated_pos_x;
+        
+    // update the bitmap only if in range
+    if (x_pos1 < DIM && y_pos1 < DIM) {
+        int oldOffset = x_pos1 + y_pos1 * gridDim.x;
+        bitmap[oldOffset*4 + 0] = 0;
+        bitmap[oldOffset*4 + 1] = 0;
+        bitmap[oldOffset*4 + 2] = 0;
+        bitmap[oldOffset*4 + 3] = 0;
+    }
 
-    // update the bitmap
-    int oldOffset = x_pos1 + y_pos1 * gridDim.x;
-    bitmap[oldOffset*4 + 0] = 0;
-    bitmap[oldOffset*4 + 1] = 0;
-    bitmap[oldOffset*4 + 2] = 0;
-    bitmap[oldOffset*4 + 3] = 0;
-
-    int newOffset = updated_pos_x + updated_pos_y * gridDim.x;
-    bitmap[newOffset*4 + 0] = 255;
-    bitmap[newOffset*4 + 1] = 255;
-    bitmap[newOffset*4 + 2] = 255;
-    bitmap[newOffset*4 + 3] = 255;
+    if (x_pos2 < DIM && y_pos2 < DIM) {
+        int newOffset = updated_pos_x + updated_pos_y * gridDim.x;
+        bitmap[newOffset*4 + 0] = 255;
+        bitmap[newOffset*4 + 1] = 255;
+        bitmap[newOffset*4 + 2] = 255;
+        bitmap[newOffset*4 + 3] = 255;
+    }
 }
 
 // animation stuff
 void generate_frame(DataBlock *d, int ticks) {
+    // Only perform updates every N ticks
+    if (ticks % TIME_OFFSET != 0) {
+        return;
+    }
+
     // allocate memory on GPU
 
     // copy simulation point array to GPU
