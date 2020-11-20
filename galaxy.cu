@@ -33,15 +33,15 @@ struct DataBlock {
     unsigned char *dev_bitmap;
     CPUAnimBitmap *bitmap;
 
-    point *dev_sim_points_in;
-    point *dev_sim_points_out;
-    float *dev_total_force;
-    float *dev_total_force_reduced;
+    std::vector<point> *dev_sim_points_in;
+    std::vector<point> *dev_sim_points_out;
+    std::vector<float> *dev_total_force;
+    std::vector<float> *dev_total_force_reduced;
 
-    point sim_points_in[CONST_MAX_NUM_POINTS];
-    point sim_points_out[CONST_MAX_NUM_POINTS];
-    float total_force[CONST_MAX_NUM_POINTS * CONST_MAX_NUM_POINTS];
-    float total_force_reduced[CONST_MAX_NUM_POINTS];
+    std::vector<point> sim_points_in;
+    std::vector<point> sim_points_out;
+    std::vector<float> total_force;
+    std::vector<float> total_force_reduced;
 };
 
 //TODO
@@ -201,44 +201,42 @@ void generate_frame(DataBlock *d, int ticks) {
         return;
     }
 
+    int numPoints = d->sim_points_in.size();
+
     // copy simulation point array to GPU
-    HANDLE_ERROR( cudaMemcpy( d->dev_sim_points_in, d->sim_points_in, CONST_MAX_NUM_POINTS * sizeof(point),
-    cudaMemcpyHostToDevice ) );
+    HANDLE_ERROR( cudaMemcpy( d->dev_sim_points_in, d->sim_points_in, numPoints * sizeof(point), mcudaMemcpyHostToDevice ) );
 
     // run kernel - calculate all forces on every body in the simulation
-    calculate_all_forces<<<CONST_MAX_NUM_POINTS, CONST_MAX_NUM_POINTS>>>(d->dev_sim_points_in, d->dev_total_force);
+    calculate_all_forces<<<numPoints, numPoints>>>(d->dev_sim_points_in, d->dev_total_force);
 
     // copy the total force matrix to CPU
-    HANDLE_ERROR( cudaMemcpy( d->total_force, d->dev_total_force, CONST_MAX_NUM_POINTS * CONST_MAX_NUM_POINTS * sizeof(float),
-    cudaMemcpyDeviceToHost ) );
+    HANDLE_ERROR( cudaMemcpy( d->total_force, d->dev_total_force, numPoints * numPoints * sizeof(float), cudaMemcpyDeviceToHost ) );
 
     // perform a reduction
-    for (int k = 0; k < CONST_MAX_NUM_POINTS; k++) {
+    for (int k = 0; k < numPoints; k++) {
         // reset the running sum to 0
         float running_sum = 0;
-        for (int i = 0; i < CONST_MAX_NUM_POINTS; i++) {
+        for (int i = 0; i < numPoints; i++) {
             // add together all forces from every object
-            running_sum += (d->total_force)[k * CONST_MAX_NUM_POINTS + i];
+            running_sum += (d->total_force)[k * numPoints + i];
         } 
         // store the resulting total force in a new array
         (d->total_force_reduced)[k] = running_sum;
     }
 
     // copy the total force array to the GPU
-    HANDLE_ERROR( cudaMemcpy( d->dev_total_force_reduced, d->total_force_reduced, CONST_MAX_NUM_POINTS * sizeof(float),
-    cudaMemcpyHostToDevice ) );
+    HANDLE_ERROR( cudaMemcpy( d->dev_total_force_reduced, d->total_force_reduced, numPoints * sizeof(float), cudaMemcpyHostToDevice ) );
 
     // run kernel - calculate updated position and velocity for the object
-    update_sim_points<<<CONST_MAX_NUM_POINTS, 1>>>(d->dev_total_force_reduced, d->dev_sim_points_in, d->dev_sim_points_out, d->dev_bitmap);
+    update_sim_points<<<numPoints, 1>>>(d->dev_total_force_reduced, d->dev_sim_points_in, d->dev_sim_points_out, d->dev_bitmap);
 
     // copy simulation point array to CPU
-    HANDLE_ERROR( cudaMemcpy( d->sim_points_out, d->dev_sim_points_out, CONST_MAX_NUM_POINTS * sizeof(point),
-    cudaMemcpyDeviceToHost ) );
+    HANDLE_ERROR( cudaMemcpy( d->sim_points_out, d->dev_sim_points_out, numPoints * sizeof(point), cudaMemcpyDeviceToHost ) );
 
     HANDLE_ERROR( cudaMemcpy( d->bitmap->get_ptr(), d->dev_bitmap, d->bitmap->image_size(), cudaMemcpyDeviceToHost ) );
 
     // copy the output data to the input data
-    memcpy(&(d->sim_points_in), &(d->sim_points_out), CONST_MAX_NUM_POINTS * sizeof(point));
+    memcpy(&(d->sim_points_in), &(d->sim_points_out), numPoints * sizeof(point));
 }
 
 void cleanup(DataBlock *d) {
@@ -263,11 +261,10 @@ int main() {
     CPUAnimBitmap bitmap(DIM, DIM, &data);
     data.bitmap = &bitmap;
 
-    // Map first 50 points to our array
-    // TODO: Dynamic/or convert arrays to vectors (preferred)
-    for (int i = 0; i < 50; i++) {
-	data.sim_points_in[i] = points[i];
-    }
+    data.sim_points_in = points;
+    data.sim_points_out.resize(points.size());
+    data.total_force.resize(points.size() * points.size());
+    data.total_force_reduced.resize(points.size());
 
     // Debug print points
     for(int x(0); x<50; ++x){
