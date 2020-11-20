@@ -8,6 +8,8 @@ Parallel Computing 6068
 #include <math.h>
 #include <vector>
 #include <string>
+#include <fstream>
+#include <iostream>
 #include "../../../cuda_by_example/common/book.h"
 #include "../../../cuda_by_example/common/cpu_anim.h"
 
@@ -19,9 +21,9 @@ Parallel Computing 6068
 
 // define structure containing all attributes of a simulation point
 struct point {
-	int id;
-	float x_pos;
-	float x_vel;
+    int id;
+    float x_pos;
+    float x_vel;
     float y_pos;
     float y_vel;
     float mass;
@@ -54,9 +56,9 @@ void print_points(point p){
     std::cout << p.id << " "<< p.x_pos << " " << p.x_vel << " " << p.y_pos << " " << p.y_vel << " " << p.mass << "\n";
 }
 
-void parse_input() {
+std::vector<point> parse_input(std::string path) {
     //read file
-    std::ifstream data("particles.csv");
+    std::ifstream data(path);
     if (!data.is_open())
     {
         exit(EXIT_FAILURE);
@@ -73,23 +75,22 @@ void parse_input() {
     float mass;
     char delimiter;
 
+    std::string line;
+
     data.ignore(1000, '\n'); //ignore first line
     while(data >> id >> delimiter >> x_pos >> delimiter >> x_vel >> delimiter >> y_pos >> delimiter >> y_vel >> delimiter >> mass){
         point p;
-        p.id;
-        p.x_pos;
-        p.x_vel;
-        p.y_pos;
-        p.y_vel;
-        p.mass;
+        p.id = id;
+        p.x_pos = x_pos;
+        p.x_vel = x_vel;
+        p.y_pos = y_pos;
+        p.y_vel = y_vel;
+        p.mass = mass;
 
-        my_points.push_back(p); //this line is causing issues
-    }
+        my_points.push_back(p);
+    }    
 
-    std::cout << "ID" << " X_POS" << " \n";
-    for(int x(0); x<my_points.size(); ++x){
-        print_points(my_points.at(x)); 
-    }
+    return my_points;
 }
 
 // physics helper functions
@@ -184,7 +185,7 @@ __global__ void update_sim_points(float * total_force_reduced, point * sim_point
         bitmap[oldOffset*4 + 3] = 0;
     }
 
-    if (x_pos2 < DIM && y_pos2 < DIM) {
+    if (updated_pos_x < DIM && updated_pos_y < DIM) {
         int newOffset = updated_pos_x + updated_pos_y * gridDim.x;
         bitmap[newOffset*4 + 0] = 255;
         bitmap[newOffset*4 + 1] = 255;
@@ -199,8 +200,6 @@ void generate_frame(DataBlock *d, int ticks) {
     if (ticks % TIME_OFFSET != 0) {
         return;
     }
-
-    // allocate memory on GPU
 
     // copy simulation point array to GPU
     HANDLE_ERROR( cudaMemcpy( d->dev_sim_points_in, d->sim_points_in, CONST_MAX_NUM_POINTS * sizeof(point),
@@ -255,13 +254,27 @@ void cleanup(DataBlock *d) {
 // TODO
 // main function to perform physic operations 
 int main() {
-    //Note: when parsing input, put it in the data.sim_points_in array
+    // Load input data
+    std::vector<point> points = parse_input("particles.csv");
 
+    // Initialize datablock
     DataBlock data;
 
     CPUAnimBitmap bitmap(DIM, DIM, &data);
     data.bitmap = &bitmap;
 
+    // Map first 50 points to our array
+    // TODO: Dynamic/or convert arrays to vectors (preferred)
+    for (int i = 0; i < 50; i++) {
+	data.sim_points_in[i] = points[i];
+    }
+
+    // Debug print points
+    for(int x(0); x<50; ++x){
+        print_points(data.sim_points_in[x]); 
+    }
+
+/*
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_bitmap), bitmap.image_size() ) );
 
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_in), CONST_MAX_NUM_POINTS * sizeof(point) ) );
@@ -269,7 +282,7 @@ int main() {
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_total_force), CONST_MAX_NUM_POINTS * CONST_MAX_NUM_POINTS * sizeof(float) ) );
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_total_force_reduced), CONST_MAX_NUM_POINTS * sizeof(float) ) );
 
-    bitmap.anim_and_exit( (void (*)(void*,int))generate_frame, (void (*)(void*))cleanup );
+    bitmap.anim_and_exit( (void (*)(void*,int))generate_frame, (void (*)(void*))cleanup );*/
 
     return 0;
 } 
