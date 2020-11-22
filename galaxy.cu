@@ -15,7 +15,7 @@ Parallel Computing 6068
 
 #define CONST_GRAVITY 0.00000000006673
 #define CONST_TIME 1
-#define CONST_MAX_NUM_POINTS 50
+#define CONST_NUM_POINTS 100
 #define DIM 1024
 #define TIME_OFFSET 10
 
@@ -38,18 +38,11 @@ struct DataBlock {
     float *dev_total_force;
     float *dev_total_force_reduced;
 
-    point sim_points_in[CONST_MAX_NUM_POINTS];
-    point sim_points_out[CONST_MAX_NUM_POINTS];
-    float total_force[CONST_MAX_NUM_POINTS * CONST_MAX_NUM_POINTS];
-    float total_force_reduced[CONST_MAX_NUM_POINTS];
+    point sim_points_in[CONST_NUM_POINTS];
+    point sim_points_out[CONST_NUM_POINTS];
+    float total_force[CONST_NUM_POINTS * CONST_NUM_POINTS];
+    float total_force_reduced[CONST_NUM_POINTS];
 };
-
-//TODO
-// parse csv file 
-/* assumptions:
-variable names: id, x_pos, x_vel, y_pos, y_vel, mass
-output: vector (in order above) of the elements 
-*/
 
 // reference: http://www.cplusplus.com/forum/beginner/193916/
 void print_points(point p){
@@ -122,7 +115,7 @@ __global__ void calculate_all_forces(point * sim_points_in, float * total_force)
 
     if (k == i) {
         // there is no force exerted on an object by the object itself
-        total_force[k * CONST_MAX_NUM_POINTS + i] = 0;
+        total_force[k * CONST_NUM_POINTS + i] = 0;
     }
     else {
         // read the position and mass of the object
@@ -142,7 +135,7 @@ __global__ void calculate_all_forces(point * sim_points_in, float * total_force)
         float force_to_add = compute_force(m1, m2, dist);
                 
         // add the force to the total force matrix
-        total_force[k * CONST_MAX_NUM_POINTS + i] = force_to_add;
+        total_force[k * CONST_NUM_POINTS + i] = force_to_add;
     }
 	
 }
@@ -202,43 +195,43 @@ void generate_frame(DataBlock *d, int ticks) {
     }
 
     // copy simulation point array to GPU
-    HANDLE_ERROR( cudaMemcpy( d->dev_sim_points_in, d->sim_points_in, CONST_MAX_NUM_POINTS * sizeof(point),
+    HANDLE_ERROR( cudaMemcpy( d->dev_sim_points_in, d->sim_points_in, CONST_NUM_POINTS * sizeof(point),
     cudaMemcpyHostToDevice ) );
 
     // run kernel - calculate all forces on every body in the simulation
-    calculate_all_forces<<<CONST_MAX_NUM_POINTS, CONST_MAX_NUM_POINTS>>>(d->dev_sim_points_in, d->dev_total_force);
+    calculate_all_forces<<<CONST_NUM_POINTS, CONST_NUM_POINTS>>>(d->dev_sim_points_in, d->dev_total_force);
 
     // copy the total force matrix to CPU
-    HANDLE_ERROR( cudaMemcpy( d->total_force, d->dev_total_force, CONST_MAX_NUM_POINTS * CONST_MAX_NUM_POINTS * sizeof(float),
+    HANDLE_ERROR( cudaMemcpy( d->total_force, d->dev_total_force, CONST_NUM_POINTS * CONST_NUM_POINTS * sizeof(float),
     cudaMemcpyDeviceToHost ) );
 
     // perform a reduction
-    for (int k = 0; k < CONST_MAX_NUM_POINTS; k++) {
+    for (int k = 0; k < CONST_NUM_POINTS; k++) {
         // reset the running sum to 0
         float running_sum = 0;
-        for (int i = 0; i < CONST_MAX_NUM_POINTS; i++) {
+        for (int i = 0; i < CONST_NUM_POINTS; i++) {
             // add together all forces from every object
-            running_sum += (d->total_force)[k * CONST_MAX_NUM_POINTS + i];
+            running_sum += (d->total_force)[k * CONST_NUM_POINTS + i];
         } 
         // store the resulting total force in a new array
         (d->total_force_reduced)[k] = running_sum;
     }
 
     // copy the total force array to the GPU
-    HANDLE_ERROR( cudaMemcpy( d->dev_total_force_reduced, d->total_force_reduced, CONST_MAX_NUM_POINTS * sizeof(float),
+    HANDLE_ERROR( cudaMemcpy( d->dev_total_force_reduced, d->total_force_reduced, CONST_NUM_POINTS * sizeof(float),
     cudaMemcpyHostToDevice ) );
 
     // run kernel - calculate updated position and velocity for the object
-    update_sim_points<<<CONST_MAX_NUM_POINTS, 1>>>(d->dev_total_force_reduced, d->dev_sim_points_in, d->dev_sim_points_out, d->dev_bitmap);
+    update_sim_points<<<CONST_NUM_POINTS, 1>>>(d->dev_total_force_reduced, d->dev_sim_points_in, d->dev_sim_points_out, d->dev_bitmap);
 
     // copy simulation point array to CPU
-    HANDLE_ERROR( cudaMemcpy( d->sim_points_out, d->dev_sim_points_out, CONST_MAX_NUM_POINTS * sizeof(point),
+    HANDLE_ERROR( cudaMemcpy( d->sim_points_out, d->dev_sim_points_out, CONST_NUM_POINTS * sizeof(point),
     cudaMemcpyDeviceToHost ) );
 
     HANDLE_ERROR( cudaMemcpy( d->bitmap->get_ptr(), d->dev_bitmap, d->bitmap->image_size(), cudaMemcpyDeviceToHost ) );
 
     // copy the output data to the input data
-    memcpy(&(d->sim_points_in), &(d->sim_points_out), CONST_MAX_NUM_POINTS * sizeof(point));
+    memcpy(&(d->sim_points_in), &(d->sim_points_out), CONST_NUM_POINTS * sizeof(point));
 }
 
 void cleanup(DataBlock *d) {
@@ -277,10 +270,10 @@ int main() {
 /*
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_bitmap), bitmap.image_size() ) );
 
-    HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_in), CONST_MAX_NUM_POINTS * sizeof(point) ) );
-    HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_out), CONST_MAX_NUM_POINTS * sizeof(point) ) );
-    HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_total_force), CONST_MAX_NUM_POINTS * CONST_MAX_NUM_POINTS * sizeof(float) ) );
-    HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_total_force_reduced), CONST_MAX_NUM_POINTS * sizeof(float) ) );
+    HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_in), CONST_NUM_POINTS * sizeof(point) ) );
+    HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_out), CONST_NUM_POINTS * sizeof(point) ) );
+    HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_total_force), CONST_NUM_POINTS * CONST_NUM_POINTS * sizeof(float) ) );
+    HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_total_force_reduced), CONST_NUM_POINTS * sizeof(float) ) );
 
     bitmap.anim_and_exit( (void (*)(void*,int))generate_frame, (void (*)(void*))cleanup );*/
 
