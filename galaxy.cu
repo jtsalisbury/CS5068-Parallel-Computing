@@ -22,6 +22,26 @@ Parallel Computing 6068
 #define FILENAME_INPUT_POINTS "particles2.csv"
 #define FILENAME_OUTPUT_TIMING_DATA "timing_data.csv"
 
+// set this to 1 to record timing data and 0 to turn off recording
+#define RECORD_TIMING_DATA 1
+
+#if RECORD_TIMING_DATA
+// create output file stream (globally, to avoid constant opens/closes)
+std::ofstream file_timing_data;
+
+void create_output_timing_file(std::string path) {
+    // create an output .csv file with the timing data
+    file_timing_data.open(path, std::fstream::out | std::fstream::app);
+    if (!file_timing_data.is_open())
+    {
+        exit(EXIT_FAILURE);
+    }
+
+    // add fields as first line of .csv
+    file_timing_data << "calc_forces_ms,update_points_ms,update_bitmap_ms" << std::endl;
+}
+#endif
+
 // define structure containing all attributes of a simulation point
 struct Point {
     int id;
@@ -336,22 +356,15 @@ void generate_frame(DataBlock *d, int ticks) {
     timer.Start();
     // run kernel - update bitmap
     update_bitmap<<<CONST_NUM_POINTS, 1>>>(d->dev_sim_points_in, d->dev_sim_points_out, d->dev_bitmap);
+
     timer.Stop();
 
     time_data.update_bitmap_ms = timer.Elapsed();
 
-    // create an output .csv file with the timing data
-    std::ofstream file_timing_data;
-    file_timing_data.open(FILENAME_OUTPUT_TIMING_DATA, std::fstream::out | std::fstream::app);
-    if (!file_timing_data.is_open())
-    {
-        exit(EXIT_FAILURE);
-    }
-
+#if RECORD_TIMING_DATA
     file_timing_data << time_data.calc_forces_ms << "," << time_data.update_points_ms << "," << time_data.update_bitmap_ms << std::endl;
-
-    // close the file
-    file_timing_data.close();
+#endif
+    
 
     // copy simulation point array to CPU
     HANDLE_ERROR( cudaMemcpy( d->sim_points_out, d->dev_sim_points_out, CONST_NUM_POINTS * sizeof(Point),
@@ -365,6 +378,10 @@ void generate_frame(DataBlock *d, int ticks) {
 
 
 void cleanup(DataBlock *d) {
+#if RECORD_TIMING_DATA
+    // close the file
+    file_timing_data.close();
+#endif
     // free the memory allocated on the GPU
     HANDLE_ERROR( cudaFree( d->dev_sim_points_in ) );
     HANDLE_ERROR( cudaFree( d->dev_sim_points_out ) );
@@ -375,19 +392,23 @@ void cleanup(DataBlock *d) {
     HANDLE_ERROR( cudaFree( d->dev_bitmap ) ); 
 }
 
-// TODO
 // main function to perform physic operations 
 int main() {
 
-    // Initialize datablock
+    // initialize datablock
     DataBlock data;
 
     // initialize bitmap
     CPUAnimBitmap bitmap(DIM, DIM, &data);
     data.bitmap = &bitmap;
 
-    // Load input data
+    // load input data
     parse_input(FILENAME_INPUT_POINTS, data.sim_points_in);
+
+#if RECORD_TIMING_DATA
+    // create file to store timing data
+    create_output_timing_file(FILENAME_OUTPUT_TIMING_DATA);
+#endif
 
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_in), CONST_NUM_POINTS * sizeof(Point) ) );
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_out), CONST_NUM_POINTS * sizeof(Point) ) );
