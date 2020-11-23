@@ -342,13 +342,13 @@ void generate_frame(DataBlock *d, int ticks) {
 
     // create an output .csv file with the timing data
     std::ofstream file_timing_data;
-    file_timing_data.open(FILENAME_OUTPUT_TIMING_DATA, std::fstream::out | std::fstream::app)
+    file_timing_data.open(FILENAME_OUTPUT_TIMING_DATA, std::fstream::out | std::fstream::app);
     if (!file_timing_data.is_open())
     {
         exit(EXIT_FAILURE);
     }
 
-    file_timing_data << (k + 1) << "," << time_data.calc_forces_ms << "," << time_data.update_points_ms << "," << time_data.update_bitmap_ms << std::endl;
+    file_timing_data << time_data.calc_forces_ms << "," << time_data.update_points_ms << "," << time_data.update_bitmap_ms << std::endl;
 
     // close the file
     file_timing_data.close();
