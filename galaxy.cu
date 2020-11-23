@@ -262,6 +262,8 @@ void generate_frame(DataBlock *d, int ticks) {
         return;
     }
 
+    GpuTimer timer;
+
     // copy simulation point array to GPU
     HANDLE_ERROR( cudaMemcpy( d->dev_sim_points_in, d->sim_points_in, CONST_NUM_POINTS * sizeof(Point),
     cudaMemcpyHostToDevice ) );
@@ -269,8 +271,12 @@ void generate_frame(DataBlock *d, int ticks) {
     // Allocating enough blocks for each object's x- and y-components
     dim3 grid(CONST_NUM_POINTS, 2);
 
+    timer.Start();
     // run kernel - calculate all forces on every body in the simulation
     calculate_all_forces<<<grid, CONST_NUM_POINTS>>>(d->dev_sim_points_in, d->dev_total_force_x, d->dev_total_force_y);
+    timer.Stop();
+
+    std::cout << "Time to calculate all forces: " << timer.Elapsed() << " ms" << std::endl;
 
     // copy the total force matrices to CPU
     HANDLE_ERROR( cudaMemcpy( d->total_force_x, d->dev_total_force_x, CONST_NUM_POINTS * CONST_NUM_POINTS * sizeof(float),
@@ -306,12 +312,20 @@ void generate_frame(DataBlock *d, int ticks) {
     HANDLE_ERROR( cudaMemcpy( d->dev_total_force_reduced_y, d->total_force_reduced_y, CONST_NUM_POINTS * sizeof(float),
     cudaMemcpyHostToDevice ) );
 
+    timer.Start();
     // run kernel - calculate updated position and velocity for the object
     update_sim_points<<<grid, 1>>>(d->dev_total_force_reduced_x, d->dev_total_force_reduced_y, 
         d->dev_sim_points_in, d->dev_sim_points_out);
+    timer.Stop();
 
+    std::cout << "Time to update sim points: " << timer.Elapsed() << " ms" << std::endl;
+
+    timer.Start();
     // run kernel - update bitmap
     update_bitmap<<<CONST_NUM_POINTS, 1>>>(d->dev_sim_points_in, d->dev_sim_points_out, d->dev_bitmap);
+    timer.Stop();
+
+    std::cout << "Time to updated bitmap: " << timer.Elapsed() << " ms" << std::endl;
 
     // copy simulation point array to CPU
     HANDLE_ERROR( cudaMemcpy( d->sim_points_out, d->dev_sim_points_out, CONST_NUM_POINTS * sizeof(Point),
