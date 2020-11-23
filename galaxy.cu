@@ -31,8 +31,8 @@ struct Point {
 };
 
 struct DataBlock {
-    //unsigned char *dev_bitmap;
-    //CPUAnimBitmap *bitmap;
+    unsigned char *dev_bitmap;
+    CPUAnimBitmap *bitmap;
 
     Point *dev_sim_points_in;
     Point *dev_sim_points_out;
@@ -338,7 +338,7 @@ int main() {
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_total_force_reduced_x), CONST_NUM_POINTS * sizeof(float) ) );
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_total_force_y), CONST_NUM_POINTS * CONST_NUM_POINTS * sizeof(float) ) );
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_total_force_reduced_y), CONST_NUM_POINTS * sizeof(float) ) );
-    HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_bitmap), bitmap.image_size() ) )
+    HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_bitmap), bitmap.image_size() ) );
 
     bitmap.anim_and_exit( (void (*)(void*,int))generate_frame, (void (*)(void*))cleanup );
 
