@@ -10,6 +10,7 @@ Parallel Computing 6068
 #include <string>
 #include <fstream>
 #include <iostream>
+#include <math.h>
 #include "../../../cuda_by_example/common/book.h"
 #include "../../../cuda_by_example/common/cpu_anim.h"
 
@@ -228,10 +229,10 @@ __global__ void update_bitmap(Point * sim_points_in, Point * sim_points_out, uns
     int k = blockIdx.x;
 
     // get the initial and final positions of each object
-    float x_pos1 = sim_points_in[k].x_pos;
-    float y_pos1 = sim_points_in[k].y_pos;
-    float updated_pos_x = sim_points_out[k].x_pos;
-    float updated_pos_y = sim_points_out[k].y_pos;
+    int x_pos1 = round(sim_points_in[k].x_pos);
+    int y_pos1 = round(sim_points_in[k].y_pos);
+    int updated_pos_x = round(sim_points_out[k].x_pos);
+    int updated_pos_y = round(sim_points_out[k].y_pos);
 
     // update the bitmap only if in range
     if (x_pos1 < DIM && y_pos1 < DIM) {
