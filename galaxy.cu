@@ -7,7 +7,6 @@ Parallel Computing 6068
 #include <cmath>
 #include <math.h>
 #include <string>
-#include <vector>
 #include <fstream>
 #include <iostream>
 #include "gputimer.h"
@@ -22,7 +21,6 @@ Parallel Computing 6068
 #define TIME_OFFSET 10
 #define FILENAME_INPUT_POINTS "particles2.csv"
 #define FILENAME_OUTPUT_TIMING_DATA "timing_data.csv"
-
 
 // define structure containing all attributes of a simulation point
 struct Point {
@@ -59,9 +57,6 @@ struct DataBlock {
     float total_force_reduced_x[CONST_NUM_POINTS];
     float total_force_reduced_y[CONST_NUM_POINTS];
 };
-
-// create a vector to hold timing data
-std::vector<TimingData> timing_data;
 
 // reference: http://www.cplusplus.com/forum/beginner/193916/
 void print_points(Point p){
@@ -345,8 +340,18 @@ void generate_frame(DataBlock *d, int ticks) {
 
     time_data.update_bitmap_ms = timer.Elapsed();
 
-    // add new time data structure into vector
-    timing_data.push_back(time_data);
+    // create an output .csv file with the timing data
+    std::ofstream file_timing_data;
+    file_timing_data.open(FILENAME_OUTPUT_TIMING_DATA, std::fstream::out | std::fstream::app)
+    if (!file_timing_data.is_open())
+    {
+        exit(EXIT_FAILURE);
+    }
+
+    file_timing_data << (k + 1) << "," << time_data.calc_forces_ms << "," << time_data.update_points_ms << "," << time_data.update_bitmap_ms << std::endl;
+
+    // close the file
+    file_timing_data.close();
 
     // copy simulation point array to CPU
     HANDLE_ERROR( cudaMemcpy( d->sim_points_out, d->dev_sim_points_out, CONST_NUM_POINTS * sizeof(Point),
@@ -360,25 +365,6 @@ void generate_frame(DataBlock *d, int ticks) {
 
 
 void cleanup(DataBlock *d) {
-    // create an output .csv file with the timing data
-    std::ofstream data(FILENAME_OUTPUT_TIMING_DATA);
-    if (!data.is_open())
-    {
-        exit(EXIT_FAILURE);
-    }
-
-    // first line defines the .csv parameters
-    data << "iteration,calc_forces_ms,update_points_ms,update_bitmap_ms" << std::endl;
-
-    // loop through the vector, create a line to add to the file, and then add it
-    for (int k = 0; k < timing_data.size(); k++) {
-        TimingData data_point = timing_data[k];
-        data << (k + 1) << "," << data_point.calc_forces_ms << "," << data_point.update_points_ms << "," << data_point.update_bitmap_ms << std::endl;
-    }
-
-    // close the file
-    data.close();
-
     // free the memory allocated on the GPU
     HANDLE_ERROR( cudaFree( d->dev_sim_points_in ) );
     HANDLE_ERROR( cudaFree( d->dev_sim_points_out ) );
