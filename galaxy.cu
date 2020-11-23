@@ -242,6 +242,8 @@ __global__ void update_bitmap(Point * sim_points_in, Point * sim_points_out, uns
         bitmap[oldOffset*4 + 3] = 0;
     }
 
+    __syncthreads();
+
     if (updated_pos_x < DIM && updated_pos_y < DIM) {
         int newOffset = updated_pos_x + updated_pos_y * gridDim.x;
         bitmap[newOffset*4 + 0] = 255;
