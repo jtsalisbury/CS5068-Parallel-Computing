@@ -16,10 +16,10 @@ Parallel Computing 6068
 
 #define CONST_GRAVITY 0.00000000006673
 #define CONST_TIME 1
-#define CONST_NUM_POINTS 100
+#define CONST_NUM_POINTS 5
 #define CONST_NUM_ITERATIONS 5
 #define DIM 1024
-#define TIME_OFFSET 10
+#define TIME_OFFSET 1000
 
 // define structure containing all attributes of a simulation point
 struct Point {
@@ -223,37 +223,45 @@ __global__ void update_sim_points(float * total_force_reduced_x, float * total_f
     }
 }
 
+__device__ void updatePointColor(int x, int y, unsigned char* bitmap, int col) {
+    if (x < 0 || y < 0 || x > DIM -1|| y > DIM - 1) {
+        return;
+    }
+
+    int offset = x + y * DIM;
+    bitmap[offset*4 + 0] = col;
+    bitmap[offset*4 + 1] = col;
+    bitmap[offset*4 + 2] = col;
+    bitmap[offset*4 + 3] = col;
+}
+
 __global__ void update_bitmap(Point * sim_points_in, Point * sim_points_out, unsigned char * bitmap)
 {    
     // get the ids for each block
     int k = blockIdx.x;
 
-    // get the initial and final positions of each object
-    int x_pos1 = round(sim_points_in[k].x_pos);
-    int y_pos1 = round(sim_points_in[k].y_pos);
-    int updated_pos_x = round(sim_points_out[k].x_pos);
-    int updated_pos_y = round(sim_points_out[k].y_pos);
+    int scaler = 1;
 
-    // update the bitmap only if in range
-    if (x_pos1 < DIM && y_pos1 < DIM) {
-        int oldOffset = x_pos1 + y_pos1 * DIM;
-        bitmap[oldOffset*4 + 0] = 0;
-        bitmap[oldOffset*4 + 1] = 0;
-        bitmap[oldOffset*4 + 2] = 0;
-        bitmap[oldOffset*4 + 3] = 0;
-    }
+    // get the initial and final positions of each object
+    int x_pos1 = round(sim_points_in[k].x_pos * scaler);
+    int y_pos1 = round(sim_points_in[k].y_pos * scaler);
+    int updated_pos_x = round(sim_points_out[k].x_pos * scaler);
+    int updated_pos_y = round(sim_points_out[k].y_pos * scaler);
+
+    printf("Moving from (%i, %i) to (%i, %i)\n", x_pos1, y_pos1, updated_pos_x, updated_pos_y);
+
 
     __syncthreads();
 
-    if (updated_pos_x < DIM && updated_pos_y < DIM) {
-        int newOffset = updated_pos_x + updated_pos_y * DIM;
-        bitmap[newOffset*4 + 0] = 255;
-        bitmap[newOffset*4 + 1] = 255;
-        bitmap[newOffset*4 + 2] = 255;
-        bitmap[newOffset*4 + 3] = 255;
+    int sz = 1;
+    // update the bitmap only if in range
+    for (int x = -1 * sz; x <= sz; x++) {
+	for (int y = -1 * sz; y <= sz; y++) {
+	    updatePointColor(x + x_pos1, y + y_pos1, bitmap, 0);
+	    updatePointColor(x + updated_pos_x, y + updated_pos_y, bitmap, 255);
+	}
     }
 }
-
 
 // animation stuff
 void generate_frame(DataBlock *d, int ticks) {
@@ -348,7 +356,7 @@ int main() {
     data.bitmap = &bitmap;
 
     // Load input data
-    parse_input("particles.csv", data.sim_points_in);
+    parse_input("particles_simple.csv", data.sim_points_in);
 
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_in), CONST_NUM_POINTS * sizeof(Point) ) );
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_out), CONST_NUM_POINTS * sizeof(Point) ) );
