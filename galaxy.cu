@@ -6,12 +6,12 @@ Parallel Computing 6068
 
 #include <cmath>
 #include <math.h>
-#include <vector>
 #include <string>
 #include <fstream>
 #include <iostream>
-#include "../../../cuda_by_example/common/book.h"
-#include "../../../cuda_by_example/common/cpu_anim.h"
+#include "gputimer.h"
+#include "../../common/book.h"
+#include "../../common/cpu_anim.h"
 
 #define CONST_GRAVITY 0.00000000006673
 #define CONST_TIME 1
