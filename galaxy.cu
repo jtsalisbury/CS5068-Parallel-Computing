@@ -7,6 +7,7 @@ Parallel Computing 6068
 #include <cmath>
 #include <math.h>
 #include <string>
+#include <vector>
 #include <fstream>
 #include <iostream>
 #include "gputimer.h"
@@ -19,6 +20,9 @@ Parallel Computing 6068
 #define CONST_NUM_ITERATIONS 5
 #define DIM 1024
 #define TIME_OFFSET 10
+#define FILENAME_INPUT_POINTS "particles2.csv"
+#define FILENAME_OUTPUT_TIMING_DATA "timing_data.csv"
+
 
 // define structure containing all attributes of a simulation point
 struct Point {
@@ -28,6 +32,13 @@ struct Point {
     float y_pos;
     float y_vel;
     float mass;
+};
+
+// define a structure for holding timing data
+struct TimingData {
+    float calc_forces_ms;
+    float update_points_ms;
+    float update_bitmap_ms;
 };
 
 struct DataBlock {
@@ -48,6 +59,9 @@ struct DataBlock {
     float total_force_reduced_x[CONST_NUM_POINTS];
     float total_force_reduced_y[CONST_NUM_POINTS];
 };
+
+// create a vector to hold timing data
+std::vector<TimingData> timing_data;
 
 // reference: http://www.cplusplus.com/forum/beginner/193916/
 void print_points(Point p){
@@ -84,7 +98,10 @@ void parse_input(std::string path, Point * sim_points) {
 
         sim_points[counter] = p;
         counter++;
-    }    
+    } 
+    
+    // close the file
+    data.close();
 
 }
 
@@ -263,6 +280,7 @@ void generate_frame(DataBlock *d, int ticks) {
     }
 
     GpuTimer timer;
+    TimingData time_data;
 
     // copy simulation point array to GPU
     HANDLE_ERROR( cudaMemcpy( d->dev_sim_points_in, d->sim_points_in, CONST_NUM_POINTS * sizeof(Point),
@@ -276,7 +294,7 @@ void generate_frame(DataBlock *d, int ticks) {
     calculate_all_forces<<<grid, CONST_NUM_POINTS>>>(d->dev_sim_points_in, d->dev_total_force_x, d->dev_total_force_y);
     timer.Stop();
 
-    std::cout << "Time to calculate all forces: " << timer.Elapsed() << " ms" << std::endl;
+    time_data.calc_forces_ms = timer.Elapsed();
 
     // copy the total force matrices to CPU
     HANDLE_ERROR( cudaMemcpy( d->total_force_x, d->dev_total_force_x, CONST_NUM_POINTS * CONST_NUM_POINTS * sizeof(float),
@@ -318,14 +336,17 @@ void generate_frame(DataBlock *d, int ticks) {
         d->dev_sim_points_in, d->dev_sim_points_out);
     timer.Stop();
 
-    std::cout << "Time to update sim points: " << timer.Elapsed() << " ms" << std::endl;
+    time_data.update_points_ms = timer.Elapsed();
 
     timer.Start();
     // run kernel - update bitmap
     update_bitmap<<<CONST_NUM_POINTS, 1>>>(d->dev_sim_points_in, d->dev_sim_points_out, d->dev_bitmap);
     timer.Stop();
 
-    std::cout << "Time to updated bitmap: " << timer.Elapsed() << " ms" << std::endl;
+    time_data.update_bitmap_ms = timer.Elapsed();
+
+    // add new time data structure into vector
+    timing_data.push_back(time_data);
 
     // copy simulation point array to CPU
     HANDLE_ERROR( cudaMemcpy( d->sim_points_out, d->dev_sim_points_out, CONST_NUM_POINTS * sizeof(Point),
@@ -339,6 +360,25 @@ void generate_frame(DataBlock *d, int ticks) {
 
 
 void cleanup(DataBlock *d) {
+    // create an output .csv file with the timing data
+    std::ofstream data(FILENAME_OUTPUT_TIMING_DATA);
+    if (!data.is_open())
+    {
+        exit(EXIT_FAILURE);
+    }
+
+    // first line defines the .csv parameters
+    data << "iteration,calc_forces_ms,update_points_ms,update_bitmap_ms" << std::endl;
+
+    // loop through the vector, create a line to add to the file, and then add it
+    for (int k = 0; k < timing_data.size(); k++) {
+        TimingData data_point = timing_data[k];
+        data << (k + 1) << "," << data_point.calc_forces_ms << "," << data_point.update_points_ms << "," << data_point.update_bitmap_ms << std::endl;
+    }
+
+    // close the file
+    data.close();
+
     // free the memory allocated on the GPU
     HANDLE_ERROR( cudaFree( d->dev_sim_points_in ) );
     HANDLE_ERROR( cudaFree( d->dev_sim_points_out ) );
@@ -361,7 +401,7 @@ int main() {
     data.bitmap = &bitmap;
 
     // Load input data
-    parse_input("particles.csv", data.sim_points_in);
+    parse_input(FILENAME_INPUT_POINTS, data.sim_points_in);
 
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_in), CONST_NUM_POINTS * sizeof(Point) ) );
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_out), CONST_NUM_POINTS * sizeof(Point) ) );
