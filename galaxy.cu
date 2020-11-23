@@ -174,8 +174,8 @@ __global__ void calculate_all_forces(Point * sim_points_in, float * total_force_
 }
 
 __global__ void update_sim_points(float * total_force_reduced_x, float * total_force_reduced_y, 
-                                  Point * sim_points_in, Point * sim_points_out, unsigned char * bitmap) {
-    // get the ids for each block and thread
+                                  Point * sim_points_in, Point * sim_points_out) {
+    // get the ids for each block
     int k = blockIdx.x;
     int x_or_y = blockIdx.y;
 
@@ -220,7 +220,19 @@ __global__ void update_sim_points(float * total_force_reduced_x, float * total_f
         sim_points_out[k].y_vel = updated_vel_y;
         sim_points_out[k].y_pos = updated_pos_y;
     }
-        
+}
+
+__global__ void update_bitmap(Point * sim_points_in, Point * sim_points_out, unsigned char * bitmap)
+{    
+    // get the ids for each block
+    int k = blockIdx.x;
+
+    // get the initial and final positions of each object
+    x_pos1 = sim_points_in[k].x_pos;
+    y_pos1 = sim_points_in[k].y_pos;
+    updated_pos_x = sim_points_out[k].x_pos;
+    updated_pos_y = sim_points_out[k].y_pos;
+
     // update the bitmap only if in range
     if (x_pos1 < DIM && y_pos1 < DIM) {
         int oldOffset = x_pos1 + y_pos1 * gridDim.x;
@@ -294,7 +306,10 @@ void generate_frame(DataBlock *d, int ticks) {
 
     // run kernel - calculate updated position and velocity for the object
     update_sim_points<<<grid, 1>>>(d->dev_total_force_reduced_x, d->dev_total_force_reduced_y, 
-        d->dev_sim_points_in, d->dev_sim_points_out, d->dev_bitmap);
+        d->dev_sim_points_in, d->dev_sim_points_out);
+
+    // run kernel - update bitmap
+    update_bitmap<<<CONST_NUM_POINTS, 1>>>(d->dev_sim_points_in, d->dev_sim_points_out, d->dev_bitmap);
 
     // copy simulation point array to CPU
     HANDLE_ERROR( cudaMemcpy( d->sim_points_out, d->dev_sim_points_out, CONST_NUM_POINTS * sizeof(Point),
