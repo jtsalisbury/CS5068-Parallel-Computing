@@ -236,7 +236,7 @@ __global__ void update_bitmap(Point * sim_points_in, Point * sim_points_out, uns
 
     // update the bitmap only if in range
     if (x_pos1 < DIM && y_pos1 < DIM) {
-        int oldOffset = x_pos1 + y_pos1 * gridDim.x;
+        int oldOffset = x_pos1 + y_pos1 * DIM;
         bitmap[oldOffset*4 + 0] = 0;
         bitmap[oldOffset*4 + 1] = 0;
         bitmap[oldOffset*4 + 2] = 0;
@@ -246,7 +246,7 @@ __global__ void update_bitmap(Point * sim_points_in, Point * sim_points_out, uns
     __syncthreads();
 
     if (updated_pos_x < DIM && updated_pos_y < DIM) {
-        int newOffset = updated_pos_x + updated_pos_y * gridDim.x;
+        int newOffset = updated_pos_x + updated_pos_y * DIM;
         bitmap[newOffset*4 + 0] = 255;
         bitmap[newOffset*4 + 1] = 255;
         bitmap[newOffset*4 + 2] = 255;
