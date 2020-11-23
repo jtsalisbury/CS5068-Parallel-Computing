@@ -1,4 +1,4 @@
-/* 
+/*
 N-body simulation of a galaxy 
 Authors: JT Salisbury, Sydney O'Connor, Kyle Bush, Caroline Northrop 
 Parallel Computing 6068
@@ -11,15 +11,15 @@ Parallel Computing 6068
 #include <fstream>
 #include <iostream>
 #include <math.h>
-#include "../../../cuda_by_example/common/book.h"
-#include "../../../cuda_by_example/common/cpu_anim.h"
+#include "../../cuda_by_example/common/book.h"
+#include "../../cuda_by_example/common/cpu_anim.h"
 
 #define CONST_GRAVITY 0.00000000006673
-#define CONST_TIME 1
-#define CONST_NUM_POINTS 5
-#define CONST_NUM_ITERATIONS 5
+#define CONST_TIME 1/16
+#define CONST_NUM_POINTS 8192
 #define DIM 1024
-#define TIME_OFFSET 1000
+#define TIME_OFFSET 100
+#define SCALE 1
 
 // define structure containing all attributes of a simulation point
 struct Point {
@@ -50,16 +50,13 @@ struct DataBlock {
     float total_force_reduced_y[CONST_NUM_POINTS];
 };
 
-// reference: http://www.cplusplus.com/forum/beginner/193916/
-void print_points(Point p){
-    std::cout << p.id << " "<< p.x_pos << " " << p.x_vel << " " << p.y_pos << " " << p.y_vel << " " << p.mass << "\n";
-}
-
 void parse_input(std::string path, Point * sim_points) {
     //read file
-    std::ifstream data(path);
+    std::ifstream data(path); 
+
     if (!data.is_open())
     {
+        std::cout << "Failed to open" << std::endl;
         exit(EXIT_FAILURE);
     }
 
@@ -75,6 +72,10 @@ void parse_input(std::string path, Point * sim_points) {
 
     data.ignore(1000, '\n'); //ignore first line
     while(data >> id >> delimiter >> x_pos >> delimiter >> x_vel >> delimiter >> y_pos >> delimiter >> y_vel >> delimiter >> mass){
+        if (counter + 1 >= CONST_NUM_POINTS) {
+            break;
+        }
+        
         Point p;
         p.id = id;
         p.x_pos = x_pos;
@@ -87,6 +88,7 @@ void parse_input(std::string path, Point * sim_points) {
         counter++;
     }    
 
+    data.close();
 }
 
 // physics helper functions
@@ -103,7 +105,7 @@ __device__ float compute_distance(float pos1, float pos2) {
 }
 
 __device__ float compute_updated_pos(float pos, float vel, float acceleration) {
-	return pos + (vel*CONST_TIME) +(.5 * acceleration * CONST_TIME * CONST_TIME);
+	return (pos + (vel*CONST_TIME) +(.5 * acceleration * CONST_TIME * CONST_TIME));
 }
 
 __device__ float compute_updated_velocity(float vel, float acceleration) {
@@ -200,8 +202,7 @@ __global__ void update_sim_points(float * total_force_reduced_x, float * total_f
         sim_points_out[k].mass = m1;
         sim_points_out[k].x_vel = updated_vel_x;
         sim_points_out[k].x_pos = updated_pos_x;
-    }
-    else {
+    } else {
         // y-component logic
         // get initial position, velocity, and mass
         float y_pos1 = sim_points_in[k].y_pos;
@@ -224,7 +225,7 @@ __global__ void update_sim_points(float * total_force_reduced_x, float * total_f
 }
 
 __device__ void updatePointColor(int x, int y, unsigned char* bitmap, int col) {
-    if (x < 0 || y < 0 || x > DIM -1|| y > DIM - 1) {
+    if (x < 0 || y < 0 || x > DIM - 1 || y > DIM - 1) {
         return;
     }
 
@@ -248,18 +249,17 @@ __global__ void update_bitmap(Point * sim_points_in, Point * sim_points_out, uns
     int updated_pos_x = round(sim_points_out[k].x_pos * scaler);
     int updated_pos_y = round(sim_points_out[k].y_pos * scaler);
 
-    printf("Moving from (%i, %i) to (%i, %i)\n", x_pos1, y_pos1, updated_pos_x, updated_pos_y);
-
+    //printf("Moving from (%i, %i) to (%i, %i)\n", x_pos1, y_pos1, updated_pos_x, updated_pos_y);
 
     __syncthreads();
 
-    int sz = 1;
+    int sz = 3;
     // update the bitmap only if in range
     for (int x = -1 * sz; x <= sz; x++) {
-	for (int y = -1 * sz; y <= sz; y++) {
-	    updatePointColor(x + x_pos1, y + y_pos1, bitmap, 0);
-	    updatePointColor(x + updated_pos_x, y + updated_pos_y, bitmap, 255);
-	}
+        for (int y = -1 * sz; y <= sz; y++) {
+            updatePointColor(x + x_pos1, y + y_pos1, bitmap, 0);
+            updatePointColor(x + updated_pos_x, y + updated_pos_y, bitmap, 255);
+        }
     }
 }
 
@@ -331,7 +331,6 @@ void generate_frame(DataBlock *d, int ticks) {
     // copy the output data to the input data
     memcpy(&(d->sim_points_in), &(d->sim_points_out), CONST_NUM_POINTS * sizeof(Point));
 }
-
 
 void cleanup(DataBlock *d) {
     // free the memory allocated on the GPU
