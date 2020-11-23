@@ -410,6 +410,7 @@ int main() {
     create_output_timing_file(FILENAME_OUTPUT_TIMING_DATA);
 #endif
 
+    // allocate CUDA memory
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_in), CONST_NUM_POINTS * sizeof(Point) ) );
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_out), CONST_NUM_POINTS * sizeof(Point) ) );
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_total_force_x), CONST_NUM_POINTS * CONST_NUM_POINTS * sizeof(float) ) );
@@ -418,6 +419,7 @@ int main() {
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_total_force_reduced_y), CONST_NUM_POINTS * sizeof(float) ) );
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_bitmap), bitmap.image_size() ) );
 
+    // animate the bitmap
     bitmap.anim_and_exit( (void (*)(void*,int))generate_frame, (void (*)(void*))cleanup );
 
     return 0;
