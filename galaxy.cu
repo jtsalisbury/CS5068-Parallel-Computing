@@ -228,10 +228,10 @@ __global__ void update_bitmap(Point * sim_points_in, Point * sim_points_out, uns
     int k = blockIdx.x;
 
     // get the initial and final positions of each object
-    x_pos1 = sim_points_in[k].x_pos;
-    y_pos1 = sim_points_in[k].y_pos;
-    updated_pos_x = sim_points_out[k].x_pos;
-    updated_pos_y = sim_points_out[k].y_pos;
+    float x_pos1 = sim_points_in[k].x_pos;
+    float y_pos1 = sim_points_in[k].y_pos;
+    float updated_pos_x = sim_points_out[k].x_pos;
+    float updated_pos_y = sim_points_out[k].y_pos;
 
     // update the bitmap only if in range
     if (x_pos1 < DIM && y_pos1 < DIM) {
