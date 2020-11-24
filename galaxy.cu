@@ -1,5 +1,5 @@
 /*
-N-body simulation of a galaxy 
+N-body simulation of a galaxy (parallel)
 Authors: JT Salisbury, Sydney O'Connor, Kyle Bush, Caroline Northrop 
 Parallel Computing 6068
 */
@@ -356,7 +356,6 @@ void generate_frame(DataBlock *d, int ticks) {
     timer.Start();
     // run kernel - update bitmap
     update_bitmap<<<CONST_NUM_POINTS, 1>>>(d->dev_sim_points_in, d->dev_sim_points_out, d->dev_bitmap);
-
     timer.Stop();
 
     time_data.update_bitmap_ms = timer.Elapsed();
