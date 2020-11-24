@@ -6,11 +6,11 @@ Parallel Computing 6068
 
 #include <cmath>
 #include <math.h>
-#include <vector>
 #include <string>
 #include <fstream>
 #include <iostream>
 #include <math.h>
+#include "gputimer.h"
 #include "../../../cuda_by_example/common/book.h"
 #include "../../../cuda_by_example/common/cpu_anim.h"
 
@@ -20,8 +20,31 @@ Parallel Computing 6068
 #define DIM 1024
 #define MASS_SCALE 120000.0f
 #define VELOCITY_SCALE 8.0f
+#define FILENAME_INPUT_POINTS "bodies.csv"
+#define FILENAME_OUTPUT_TIMING_DATA "timing_data.csv"
 
 // Note: potential bug if this runs for too long, some of the bodies' positions may overflow and cause the body to move to (0,0). This will adversely impact the other bodies movements
+#define TIME_OFFSET 10
+
+// set this to 1 to record timing data and 0 to turn off recording
+#define RECORD_TIMING_DATA 1
+
+#if RECORD_TIMING_DATA
+// create output file stream (globally, to avoid constant opens/closes)
+std::ofstream file_timing_data;
+
+void create_output_timing_file(std::string path) {
+    // create an output .csv file with the timing data
+    file_timing_data.open(path, std::fstream::out | std::fstream::app);
+    if (!file_timing_data.is_open())
+    {
+        exit(EXIT_FAILURE);
+    }
+
+    // add fields as first line of .csv
+    file_timing_data << "calc_forces_ms,update_points_ms,update_bitmap_ms" << std::endl;
+}
+#endif
 
 // define structure containing all attributes of a simulation point
 struct Point {
@@ -31,6 +54,13 @@ struct Point {
     float y_pos;
     float y_vel;
     float mass;
+};
+
+// define a structure for holding timing data
+struct TimingData {
+    float calc_forces_ms;
+    float update_points_ms;
+    float update_bitmap_ms;
 };
 
 struct DataBlock {
@@ -88,7 +118,10 @@ void parse_input(std::string path, Point * sim_points) {
         sim_points[counter] = p;
 
         counter++;
-    }    
+    } 
+    
+    // close the file
+    data.close();
 
     data.close();
 }
@@ -260,6 +293,10 @@ __global__ void update_bitmap(Point * sim_points_in, Point * sim_points_out, uns
 
 // animation stuff
 void generate_frame(DataBlock *d, int ticks) {
+
+    GpuTimer timer;
+    TimingData time_data;
+
     // copy simulation point array to GPU
     HANDLE_ERROR( cudaMemcpy( d->dev_sim_points_in, d->sim_points_in, CONST_NUM_POINTS * sizeof(Point),
     cudaMemcpyHostToDevice ) );
@@ -267,8 +304,12 @@ void generate_frame(DataBlock *d, int ticks) {
     // Allocating enough blocks for each object's x- and y-components
     dim3 grid(CONST_NUM_POINTS, 2);
 
+    timer.Start();
     // run kernel - calculate all forces on every body in the simulation
     calculate_all_forces<<<grid, CONST_NUM_POINTS>>>(d->dev_sim_points_in, d->dev_total_force_x, d->dev_total_force_y);
+    timer.Stop();
+
+    time_data.calc_forces_ms = timer.Elapsed();
 
     // copy the total force matrices to CPU
     HANDLE_ERROR( cudaMemcpy( d->total_force_x, d->dev_total_force_x, CONST_NUM_POINTS * CONST_NUM_POINTS * sizeof(float),
@@ -304,12 +345,26 @@ void generate_frame(DataBlock *d, int ticks) {
     HANDLE_ERROR( cudaMemcpy( d->dev_total_force_reduced_y, d->total_force_reduced_y, CONST_NUM_POINTS * sizeof(float),
     cudaMemcpyHostToDevice ) );
 
+    timer.Start();
     // run kernel - calculate updated position and velocity for the object
     update_sim_points<<<grid, 1>>>(d->dev_total_force_reduced_x, d->dev_total_force_reduced_y, 
         d->dev_sim_points_in, d->dev_sim_points_out);
+    timer.Stop();
 
+    time_data.update_points_ms = timer.Elapsed();
+
+    timer.Start();
     // run kernel - update bitmap
     update_bitmap<<<CONST_NUM_POINTS, 1>>>(d->dev_sim_points_in, d->dev_sim_points_out, d->dev_bitmap);
+
+    timer.Stop();
+
+    time_data.update_bitmap_ms = timer.Elapsed();
+
+#if RECORD_TIMING_DATA
+    file_timing_data << time_data.calc_forces_ms << "," << time_data.update_points_ms << "," << time_data.update_bitmap_ms << std::endl;
+#endif
+    
 
     // copy simulation point array to CPU
     HANDLE_ERROR( cudaMemcpy( d->sim_points_out, d->dev_sim_points_out, CONST_NUM_POINTS * sizeof(Point),
@@ -322,6 +377,10 @@ void generate_frame(DataBlock *d, int ticks) {
 }
 
 void cleanup(DataBlock *d) {
+#if RECORD_TIMING_DATA
+    // close the file
+    file_timing_data.close();
+#endif
     // free the memory allocated on the GPU
     HANDLE_ERROR( cudaFree( d->dev_sim_points_in ) );
     HANDLE_ERROR( cudaFree( d->dev_sim_points_out ) );
@@ -332,20 +391,25 @@ void cleanup(DataBlock *d) {
     HANDLE_ERROR( cudaFree( d->dev_bitmap ) ); 
 }
 
-// TODO
 // main function to perform physic operations 
 int main() {
 
-    // Initialize datablock
+    // initialize datablock
     DataBlock data;
 
     // initialize bitmap
     CPUAnimBitmap bitmap(DIM, DIM, &data);
     data.bitmap = &bitmap;
 
-    // Load input data
-    parse_input("bodies.csv", data.sim_points_in);
+    // load input data
+    parse_input(FILENAME_INPUT_POINTS, data.sim_points_in);
 
+#if RECORD_TIMING_DATA
+    // create file to store timing data
+    create_output_timing_file(FILENAME_OUTPUT_TIMING_DATA);
+#endif
+
+    // allocate CUDA memory
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_in), CONST_NUM_POINTS * sizeof(Point) ) );
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_out), CONST_NUM_POINTS * sizeof(Point) ) );
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_total_force_x), CONST_NUM_POINTS * CONST_NUM_POINTS * sizeof(float) ) );
@@ -354,6 +418,7 @@ int main() {
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_total_force_reduced_y), CONST_NUM_POINTS * sizeof(float) ) );
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_bitmap), bitmap.image_size() ) );
 
+    // animate the bitmap
     bitmap.anim_and_exit( (void (*)(void*,int))generate_frame, (void (*)(void*))cleanup );
 
     return 0;
