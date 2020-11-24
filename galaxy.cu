@@ -21,10 +21,9 @@ Parallel Computing 6068
 #define MASS_SCALE 120000.0f
 #define VELOCITY_SCALE 8.0f
 #define FILENAME_INPUT_POINTS "bodies.csv"
-#define FILENAME_OUTPUT_TIMING_DATA "timing_data.csv"
+#define FILENAME_OUTPUT_TIMING_DATA "timing_data_parallel.csv"
 
 // Note: potential bug if this runs for too long, some of the bodies' positions may overflow and cause the body to move to (0,0). This will adversely impact the other bodies movements
-#define TIME_OFFSET 10
 
 // set this to 1 to record timing data and 0 to turn off recording
 #define RECORD_TIMING_DATA 1
@@ -122,16 +121,22 @@ void parse_input(std::string path, Point * sim_points) {
     
     // close the file
     data.close();
-
-    data.close();
 }
 
 // physics helper functions
 __device__ float compute_force(float m1, float m2, float dist) {
+	if (dist * dist == 0) {
+	    return 0;
+	}
+
 	return CONST_GRAVITY * (m1 * m2/(dist * dist));
 }
 
 __device__ float compute_acceleration(float mass, float force) {
+	if (mass == 0) {
+	    return 0;
+	}
+
 	return force/mass;
 }
 

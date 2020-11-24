@@ -21,10 +21,9 @@ Parallel Computing 6068
 #define MASS_SCALE 120000.0f
 #define VELOCITY_SCALE 8.0f
 #define FILENAME_INPUT_POINTS "bodies.csv"
-#define FILENAME_OUTPUT_TIMING_DATA "timing_data.csv"
+#define FILENAME_OUTPUT_TIMING_DATA "timing_data_sequential.csv"
 
 // Note: potential bug if this runs for too long, some of the bodies' positions may overflow and cause the body to move to (0,0). This will adversely impact the other bodies movements
-#define TIME_OFFSET 10
 
 // set this to 1 to record timing data and 0 to turn off recording
 #define RECORD_TIMING_DATA 1
@@ -64,15 +63,7 @@ struct TimingData {
 };
 
 struct DataBlock {
-    unsigned char *dev_bitmap;
     CPUAnimBitmap *bitmap;
-
-    Point *dev_sim_points_in;
-    Point *dev_sim_points_out;
-    float *dev_total_force_x;
-    float *dev_total_force_reduced_x;
-    float *dev_total_force_y;
-    float *dev_total_force_reduced_y;
 
     Point sim_points_in[CONST_NUM_POINTS];
     Point sim_points_out[CONST_NUM_POINTS];
@@ -127,28 +118,36 @@ void parse_input(std::string path, Point * sim_points) {
 }
 
 // physics helper functions
-__device__ float compute_force(float m1, float m2, float dist) {
+float compute_force(float m1, float m2, float dist) {
+	if (dist * dist == 0) {
+	    return 0;
+	}
+
 	return CONST_GRAVITY * (m1 * m2/(dist * dist));
 }
 
-__device__ float compute_acceleration(float mass, float force) {
+float compute_acceleration(float mass, float force) {
+	if (mass == 0) {
+	    return 0;
+	}
+
 	return force/mass;
 }
 
-__device__ float compute_distance(float pos1, float pos2) {
+float compute_distance(float pos1, float pos2) {
 	return abs(pos1 - pos2);
 }
 
-__device__ float compute_updated_pos(float pos, float vel, float acceleration) {
+float compute_updated_pos(float pos, float vel, float acceleration) {
 	return ((pos + (vel*CONST_TIME) +(.5 * acceleration * CONST_TIME * CONST_TIME)));
 }
 
-__device__ float compute_updated_velocity(float vel, float acceleration) {
+float compute_updated_velocity(float vel, float acceleration) {
     return vel + (acceleration*CONST_TIME); 
 }
 
 // TODO: only performs x-component work so far, need to add y-component
-__global__ void calculate_all_forces(Point * sim_points_in, float * total_force_x, float * total_force_y) {
+void calculate_all_forces(Point * sim_points_in, float * total_force_x, float * total_force_y) {
 
     for (int k = 0; k < CONST_NUM_POINTS; k++) {
         for (int i = 0; i < CONST_NUM_POINTS; i++) {
@@ -156,61 +155,51 @@ __global__ void calculate_all_forces(Point * sim_points_in, float * total_force_
             if (k == i) {
                 // there is no force exerted on an object by the object itself
                 total_force_x[k * CONST_NUM_POINTS + i] = 0;
-            }
-            else {
-                // read the position and mass of the object
-                float x_pos1 = sim_points_in[k].x_pos;
-                float m1 = sim_points_in[k].mass;
+		continue;
+	    }
+            
+            // read the position and mass of the object
+            float x_pos1 = sim_points_in[k].x_pos;
+            float xm1 = sim_points_in[k].mass;
         
-                // obtain the positions of the 2nd object
-                float x_pos2  = sim_points_in[i].x_pos;
+            // obtain the positions of the 2nd object
+            float x_pos2  = sim_points_in[i].x_pos;
         
-                // calculate the distance between the 2 objects
-                float dist = compute_distance(x_pos1, x_pos2);
+            // calculate the distance between the 2 objects
+            float xdist = compute_distance(x_pos1, x_pos2);
         
-                // obtain the masses of the 2 objects 
-                float m2 = sim_points_in[i].mass;
+            // obtain the masses of the 2 objects 
+            float xm2 = sim_points_in[i].mass;
                         
-                // calculate the force between the 2 objects
-                float force_to_add = compute_force(m1, m2, dist);
+            // calculate the force between the 2 objects
+            float xforce_to_add = compute_force(xm1, xm2, xdist);
                         
-                // add the force to the total force matrix
-                total_force_x[k * CONST_NUM_POINTS + i] = force_to_add;
-            }
+            // add the force to the total force matrix
+            total_force_x[k * CONST_NUM_POINTS + i] = xforce_to_add;
+
+	    // read the position and mass of the object
+            float y_pos1 = sim_points_in[k].y_pos;
+            float ym1 = sim_points_in[k].mass;
+        
+            // obtain the positions of the 2nd object
+            float y_pos2  = sim_points_in[i].y_pos;
+        
+            // calculate the distance between the 2 objects
+            float ydist = compute_distance(y_pos1, y_pos2);
+        
+            // obtain the masses of the 2 objects 
+            float ym2 = sim_points_in[i].mass;
+                        
+            // calculate the force between the 2 objects
+            float yforce_to_add = compute_force(ym1, ym2, ydist);
+                        
+            // add the force to the total force matrix
+            total_force_y[k * CONST_NUM_POINTS + i] = yforce_to_add;
         }
     }
-    for (int k = 0; k < CONST_NUM_POINTS; k++) {
-        for (int i = 0; i < CONST_NUM_POINTS; i++) {
-            // y-component logic
-            if (k == i) {
-                // there is no force exerted on an object by the object itself
-                total_force_y[k * CONST_NUM_POINTS + i] = 0;
-            }
-            else {
-                // read the position and mass of the object
-                float y_pos1 = sim_points_in[k].y_pos;
-                float m1 = sim_points_in[k].mass;
-        
-                // obtain the positions of the 2nd object
-                float y_pos2  = sim_points_in[i].y_pos;
-        
-                // calculate the distance between the 2 objects
-                float dist = compute_distance(y_pos1, y_pos2);
-        
-                // obtain the masses of the 2 objects 
-                float m2 = sim_points_in[i].mass;
-                        
-                // calculate the force between the 2 objects
-                float force_to_add = compute_force(m1, m2, dist);
-                        
-                // add the force to the total force matrix
-                total_force_y[k * CONST_NUM_POINTS + i] = force_to_add;
-            }
-        }
-    }	
 }
 
-__global__ void update_sim_points(float * total_force_reduced_x, float * total_force_reduced_y, 
+void update_sim_points(float * total_force_reduced_x, float * total_force_reduced_y, 
                                   Point * sim_points_in, Point * sim_points_out) {
 
     for (int k = 0; k < CONST_NUM_POINTS; k++) {
@@ -218,10 +207,10 @@ __global__ void update_sim_points(float * total_force_reduced_x, float * total_f
         // get initial position, velocity, and mass
         float x_pos1 = sim_points_in[k].x_pos;
         float x_vel1 = sim_points_in[k].x_vel;
-        float m1 = sim_points_in[k].mass;
+        float xm1 = sim_points_in[k].mass;
         
         // update the acceleration
-        float acceleration_x = compute_acceleration(m1, total_force_reduced_x[k]);
+        float acceleration_x = compute_acceleration(xm1, total_force_reduced_x[k]);
 
         // update the velocity
         float updated_vel_x = compute_updated_velocity(x_vel1, acceleration_x);
@@ -230,20 +219,18 @@ __global__ void update_sim_points(float * total_force_reduced_x, float * total_f
         float updated_pos_x = compute_updated_pos(x_pos1, x_vel1, acceleration_x);
 
         // store updated position, velocity, and mass
-        sim_points_out[k].mass = m1;
+        sim_points_out[k].mass = xm1;
         sim_points_out[k].x_vel = updated_vel_x;
         sim_points_out[k].x_pos = updated_pos_x;
-    }
-    for (int k = 0; k < CONST_NUM_POINTS; k++)
-    {
-        // y-component logic
+
+	// y-component logic
         // get initial position, velocity, and mass
         float y_pos1 = sim_points_in[k].y_pos;
         float y_vel1 = sim_points_in[k].y_vel;
-        float m1 = sim_points_in[k].mass;
+        float ym1 = sim_points_in[k].mass;
         
         // update the acceleration
-        float acceleration_y = compute_acceleration(m1, total_force_reduced_y[k]);
+        float acceleration_y = compute_acceleration(ym1, total_force_reduced_y[k]);
 
         // update the velocity
         float updated_vel_y = compute_updated_velocity(y_vel1, acceleration_y);
@@ -257,7 +244,7 @@ __global__ void update_sim_points(float * total_force_reduced_x, float * total_f
     }
 }
 
-__device__ void updatePointColor(int x, int y, unsigned char* bitmap, int col) {
+void updatePointColor(int x, int y, unsigned char* bitmap, int col) {
     // Ensure we are in bounds
     if (x < 0 || y < 0 || x > DIM - 1 || y > DIM - 1) {
         return;
@@ -271,20 +258,21 @@ __device__ void updatePointColor(int x, int y, unsigned char* bitmap, int col) {
     bitmap[offset*4 + 3] = col;
 }
 
-__global__ void update_bitmap(Point * sim_points_in, Point * sim_points_out, unsigned char * bitmap)
+void update_bitmap(Point* sim_points_in, Point* sim_points_out, unsigned char* bitmap)
 {    
     for (int k = 0; k < CONST_NUM_POINTS; k++) {
         // get the initial and final positions of each object
-        int x_pos1 = round(sim_points_in[k].x_pos);
-        int y_pos1 = round(sim_points_in[k].y_pos);
-        int updated_pos_x = round(sim_points_out[k].x_pos);
-        int updated_pos_y = round(sim_points_out[k].y_pos);
-
-        __syncthreads();
+        float x_pos1 = round(sim_points_in[k].x_pos);
+        float y_pos1 = round(sim_points_in[k].y_pos);
+        float updated_pos_x = round(sim_points_out[k].x_pos);
+        float updated_pos_y = round(sim_points_out[k].y_pos);
 
         // Update the bitmap to our new body position
         updatePointColor(x_pos1, y_pos1, bitmap, 0);
         updatePointColor(updated_pos_x, updated_pos_y, bitmap, 255);
+
+	// update the input for our next frame
+	sim_points_in[k] = sim_points_out[k];
     }
 }
 
@@ -294,62 +282,47 @@ void generate_frame(DataBlock *d, int ticks) {
     GpuTimer timer;
     TimingData time_data;
 
-    // copy simulation point array to GPU
-    HANDLE_ERROR( cudaMemcpy( d->dev_sim_points_in, d->sim_points_in, CONST_NUM_POINTS * sizeof(Point),
-    cudaMemcpyHostToDevice ) );
-
     timer.Start();
     // run kernel - calculate all forces on every body in the simulation
-    calculate_all_forces<<<1, 1>>>(d->dev_sim_points_in, d->dev_total_force_x, d->dev_total_force_y);
+    calculate_all_forces(d->sim_points_in, d->total_force_x, d->total_force_y);
     timer.Stop();
 
     time_data.calc_forces_ms = timer.Elapsed();
 
-    // copy the total force matrices to CPU
-    HANDLE_ERROR( cudaMemcpy( d->total_force_x, d->dev_total_force_x, CONST_NUM_POINTS * CONST_NUM_POINTS * sizeof(float),
-    cudaMemcpyDeviceToHost ) );
-    HANDLE_ERROR( cudaMemcpy( d->total_force_y, d->dev_total_force_y, CONST_NUM_POINTS * CONST_NUM_POINTS * sizeof(float),
-    cudaMemcpyDeviceToHost ) );
-
     // perform reductions
     for (int k = 0; k < CONST_NUM_POINTS; k++) {
         // reset the running sum to 0
-        float running_sum = 0;
+        float running_sum_x = 0;
         for (int i = 0; i < CONST_NUM_POINTS; i++) {
             // add together all forces from every object
-            running_sum += (d->total_force_x)[k * CONST_NUM_POINTS + i];
+            running_sum_x += (d->total_force_x)[k * CONST_NUM_POINTS + i];
         } 
         // store the resulting total force in a new array
-        (d->total_force_reduced_x)[k] = running_sum;
-    }
-    for (int k = 0; k < CONST_NUM_POINTS; k++) {
-        // reset the running sum to 0
-        float running_sum = 0;
+        (d->total_force_reduced_x)[k] = running_sum_x;
+
+	// reset the running sum to 0
+        float running_sum_y = 0;
         for (int i = 0; i < CONST_NUM_POINTS; i++) {
             // add together all forces from every object
-            running_sum += (d->total_force_y)[k * CONST_NUM_POINTS + i];
+            running_sum_y += (d->total_force_y)[k * CONST_NUM_POINTS + i];
         } 
         // store the resulting total force in a new array
-        (d->total_force_reduced_y)[k] = running_sum;
+        (d->total_force_reduced_y)[k] = running_sum_y;
     }
 
-    // copy the total force arrays to the GPU
-    HANDLE_ERROR( cudaMemcpy( d->dev_total_force_reduced_x, d->total_force_reduced_x, CONST_NUM_POINTS * sizeof(float),
-    cudaMemcpyHostToDevice ) );
-    HANDLE_ERROR( cudaMemcpy( d->dev_total_force_reduced_y, d->total_force_reduced_y, CONST_NUM_POINTS * sizeof(float),
-    cudaMemcpyHostToDevice ) );
-
+    // calculate updated position and velocity for the object
     timer.Start();
-    // run kernel - calculate updated position and velocity for the object
-    update_sim_points<<<1, 1>>>(d->dev_total_force_reduced_x, d->dev_total_force_reduced_y, 
-        d->dev_sim_points_in, d->dev_sim_points_out);
+
+    update_sim_points(d->total_force_reduced_x, d->total_force_reduced_y, d->sim_points_in, d->sim_points_out);
     timer.Stop();
 
     time_data.update_points_ms = timer.Elapsed();
 
     timer.Start();
-    // run kernel - update bitmap
-    update_bitmap<<<1, 1>>>(d->dev_sim_points_in, d->dev_sim_points_out, d->dev_bitmap);
+
+    unsigned char* ptr = (d->bitmap)->get_ptr();
+    update_bitmap(d->sim_points_in, d->sim_points_out, ptr);
+
     timer.Stop();
     
     time_data.update_bitmap_ms = timer.Elapsed();
@@ -357,16 +330,7 @@ void generate_frame(DataBlock *d, int ticks) {
 #if RECORD_TIMING_DATA
     file_timing_data << time_data.calc_forces_ms << "," << time_data.update_points_ms << "," << time_data.update_bitmap_ms << std::endl;
 #endif
-    
-
-    // copy simulation point array to CPU
-    HANDLE_ERROR( cudaMemcpy( d->sim_points_out, d->dev_sim_points_out, CONST_NUM_POINTS * sizeof(Point),
-    cudaMemcpyDeviceToHost ) );
-
-    HANDLE_ERROR( cudaMemcpy( d->bitmap->get_ptr(), d->dev_bitmap, d->bitmap->image_size(), cudaMemcpyDeviceToHost ) );
-
-    // copy the output data to the input data
-    memcpy(&(d->sim_points_in), &(d->sim_points_out), CONST_NUM_POINTS * sizeof(Point));
+  
 }
 
 void cleanup(DataBlock *d) {
@@ -374,14 +338,6 @@ void cleanup(DataBlock *d) {
     // close the file
     file_timing_data.close();
 #endif
-    // free the memory allocated on the GPU
-    HANDLE_ERROR( cudaFree( d->dev_sim_points_in ) );
-    HANDLE_ERROR( cudaFree( d->dev_sim_points_out ) );
-    HANDLE_ERROR( cudaFree( d->dev_total_force_x ) );
-    HANDLE_ERROR( cudaFree( d->dev_total_force_reduced_x ) );
-    HANDLE_ERROR( cudaFree( d->dev_total_force_y ) );
-    HANDLE_ERROR( cudaFree( d->dev_total_force_reduced_y ) );
-    HANDLE_ERROR( cudaFree( d->dev_bitmap ) ); 
 }
 
 // main function to perform physic operations 
@@ -401,15 +357,6 @@ int main() {
     // create file to store timing data
     create_output_timing_file(FILENAME_OUTPUT_TIMING_DATA);
 #endif
-
-    // allocate CUDA memory
-    HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_in), CONST_NUM_POINTS * sizeof(Point) ) );
-    HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_out), CONST_NUM_POINTS * sizeof(Point) ) );
-    HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_total_force_x), CONST_NUM_POINTS * CONST_NUM_POINTS * sizeof(float) ) );
-    HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_total_force_reduced_x), CONST_NUM_POINTS * sizeof(float) ) );
-    HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_total_force_y), CONST_NUM_POINTS * CONST_NUM_POINTS * sizeof(float) ) );
-    HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_total_force_reduced_y), CONST_NUM_POINTS * sizeof(float) ) );
-    HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_bitmap), bitmap.image_size() ) );
 
     // animate the bitmap
     bitmap.anim_and_exit( (void (*)(void*,int))generate_frame, (void (*)(void*))cleanup );
