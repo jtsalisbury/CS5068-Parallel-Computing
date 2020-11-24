@@ -113,8 +113,6 @@ void parse_input(std::string path, Point * sim_points) {
     
     // close the file
     data.close();
-
-    data.close();
 }
 
 // physics helper functions
