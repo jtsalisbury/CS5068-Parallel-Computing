@@ -1,4 +1,4 @@
-/* 
+/*
 N-body simulation of a galaxy 
 Authors: JT Salisbury, Sydney O'Connor, Kyle Bush, Caroline Northrop 
 Parallel Computing 6068
@@ -10,15 +10,18 @@ Parallel Computing 6068
 #include <string>
 #include <fstream>
 #include <iostream>
+#include <math.h>
 #include "../../../cuda_by_example/common/book.h"
 #include "../../../cuda_by_example/common/cpu_anim.h"
 
 #define CONST_GRAVITY 0.00000000006673
-#define CONST_TIME 1
-#define CONST_NUM_POINTS 100
-#define CONST_NUM_ITERATIONS 5
+#define CONST_TIME 1/8 // or 1/16
+#define CONST_NUM_POINTS 4092
 #define DIM 1024
-#define TIME_OFFSET 10
+#define MASS_SCALE 120000.0f
+#define VELOCITY_SCALE 8.0f
+
+// Note: potential bug if this runs for too long, some of the bodies' positions may overflow and cause the body to move to (0,0). This will adversely impact the other bodies movements
 
 // define structure containing all attributes of a simulation point
 struct Point {
@@ -49,14 +52,10 @@ struct DataBlock {
     float total_force_reduced_y[CONST_NUM_POINTS];
 };
 
-// reference: http://www.cplusplus.com/forum/beginner/193916/
-void print_points(Point p){
-    std::cout << p.id << " "<< p.x_pos << " " << p.x_vel << " " << p.y_pos << " " << p.y_vel << " " << p.mass << "\n";
-}
-
 void parse_input(std::string path, Point * sim_points) {
     //read file
-    std::ifstream data(path);
+    std::ifstream data(path); 
+
     if (!data.is_open())
     {
         exit(EXIT_FAILURE);
@@ -73,19 +72,25 @@ void parse_input(std::string path, Point * sim_points) {
     int counter = 0;
 
     data.ignore(1000, '\n'); //ignore first line
-    while(data >> id >> delimiter >> x_pos >> delimiter >> x_vel >> delimiter >> y_pos >> delimiter >> y_vel >> delimiter >> mass){
+
+    // While we still have lines and haven't loaded enough bodies
+    while(data >> id >> delimiter >> x_pos >> delimiter >> x_vel >> delimiter >> y_pos >> delimiter >> y_vel >> delimiter >> mass && counter < CONST_NUM_POINTS){
+
+	// Scale the position (to try and center our galaxy, since 0, 0 is the bottom left not the middle), velocites and mass. Positions are already normalized to our 0 - 1023 scale
         Point p;
         p.id = id;
-        p.x_pos = x_pos;
-        p.x_vel = x_vel;
-        p.y_pos = y_pos;
-        p.y_vel = y_vel;
-        p.mass = mass;
+        p.x_pos = x_pos / 5 + 400;
+        p.x_vel = x_vel * VELOCITY_SCALE;
+        p.y_pos = y_pos / 5 + 300;
+        p.y_vel = y_vel * VELOCITY_SCALE;
+        p.mass = mass * MASS_SCALE;
 
         sim_points[counter] = p;
+
         counter++;
     }    
 
+    data.close();
 }
 
 // physics helper functions
@@ -102,7 +107,7 @@ __device__ float compute_distance(float pos1, float pos2) {
 }
 
 __device__ float compute_updated_pos(float pos, float vel, float acceleration) {
-	return pos + (vel*CONST_TIME) +(.5 * acceleration * CONST_TIME * CONST_TIME);
+	return ((pos + (vel*CONST_TIME) +(.5 * acceleration * CONST_TIME * CONST_TIME)));
 }
 
 __device__ float compute_updated_velocity(float vel, float acceleration) {
@@ -114,7 +119,7 @@ __global__ void calculate_all_forces(Point * sim_points_in, float * total_force_
 	// get the ids for each block and thread
     int k = blockIdx.x;
     int x_or_y = blockIdx.y;
-	int i = threadIdx.x;
+    int i = threadIdx.x;
 
     if (x_or_y == 0) {
         // x-component logic
@@ -199,8 +204,7 @@ __global__ void update_sim_points(float * total_force_reduced_x, float * total_f
         sim_points_out[k].mass = m1;
         sim_points_out[k].x_vel = updated_vel_x;
         sim_points_out[k].x_pos = updated_pos_x;
-    }
-    else {
+    } else {
         // y-component logic
         // get initial position, velocity, and mass
         float y_pos1 = sim_points_in[k].y_pos;
@@ -222,46 +226,40 @@ __global__ void update_sim_points(float * total_force_reduced_x, float * total_f
     }
 }
 
+__device__ void updatePointColor(int x, int y, unsigned char* bitmap, int col) {
+    // Ensure we are in bounds
+    if (x < 0 || y < 0 || x > DIM - 1 || y > DIM - 1) {
+        return;
+    }
+
+    // Update the bitmap
+    int offset = x + y * DIM;
+    bitmap[offset*4 + 0] = col;
+    bitmap[offset*4 + 1] = col;
+    bitmap[offset*4 + 2] = col;
+    bitmap[offset*4 + 3] = col;
+}
+
 __global__ void update_bitmap(Point * sim_points_in, Point * sim_points_out, unsigned char * bitmap)
 {    
     // get the ids for each block
     int k = blockIdx.x;
 
     // get the initial and final positions of each object
-    float x_pos1 = sim_points_in[k].x_pos;
-    float y_pos1 = sim_points_in[k].y_pos;
-    float updated_pos_x = sim_points_out[k].x_pos;
-    float updated_pos_y = sim_points_out[k].y_pos;
-
-    // update the bitmap only if in range
-    if (x_pos1 < DIM && y_pos1 < DIM) {
-        int oldOffset = x_pos1 + y_pos1 * DIM;
-        bitmap[oldOffset*4 + 0] = 0;
-        bitmap[oldOffset*4 + 1] = 0;
-        bitmap[oldOffset*4 + 2] = 0;
-        bitmap[oldOffset*4 + 3] = 0;
-    }
+    int x_pos1 = round(sim_points_in[k].x_pos);
+    int y_pos1 = round(sim_points_in[k].y_pos);
+    int updated_pos_x = round(sim_points_out[k].x_pos);
+    int updated_pos_y = round(sim_points_out[k].y_pos);
 
     __syncthreads();
 
-    if (updated_pos_x < DIM && updated_pos_y < DIM) {
-        int newOffset = updated_pos_x + updated_pos_y * DIM;
-        bitmap[newOffset*4 + 0] = 255;
-        bitmap[newOffset*4 + 1] = 255;
-        bitmap[newOffset*4 + 2] = 255;
-        bitmap[newOffset*4 + 3] = 255;
-    }
+    // Update the bitmap to our new body position
+    updatePointColor(x_pos1, y_pos1, bitmap, 0);
+    updatePointColor(updated_pos_x, updated_pos_y, bitmap, 255);
 }
-
 
 // animation stuff
 void generate_frame(DataBlock *d, int ticks) {
-    
-    // Only perform updates every N ticks
-    if (ticks % TIME_OFFSET != 0) {
-        return;
-    }
-
     // copy simulation point array to GPU
     HANDLE_ERROR( cudaMemcpy( d->dev_sim_points_in, d->sim_points_in, CONST_NUM_POINTS * sizeof(Point),
     cudaMemcpyHostToDevice ) );
@@ -323,7 +321,6 @@ void generate_frame(DataBlock *d, int ticks) {
     memcpy(&(d->sim_points_in), &(d->sim_points_out), CONST_NUM_POINTS * sizeof(Point));
 }
 
-
 void cleanup(DataBlock *d) {
     // free the memory allocated on the GPU
     HANDLE_ERROR( cudaFree( d->dev_sim_points_in ) );
@@ -347,7 +344,7 @@ int main() {
     data.bitmap = &bitmap;
 
     // Load input data
-    parse_input("particles.csv", data.sim_points_in);
+    parse_input("bodies.csv", data.sim_points_in);
 
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_in), CONST_NUM_POINTS * sizeof(Point) ) );
     HANDLE_ERROR( cudaMalloc( (void**)&(data.dev_sim_points_out), CONST_NUM_POINTS * sizeof(Point) ) );
