@@ -11,8 +11,8 @@ Parallel Computing 6068
 #include <iostream>
 #include <math.h>
 #include "gputimer.h"
-#include "../../../cuda_by_example/common/book.h"
-#include "../../../cuda_by_example/common/cpu_anim.h"
+#include "cuda_by_example/common/book.h"
+#include "cuda_by_example/commonn/cpu_anim.h"
 
 #define CONST_GRAVITY 0.00000000006673
 #define CONST_TIME 1/8 // or 1/16
