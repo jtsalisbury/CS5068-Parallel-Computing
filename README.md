@@ -4,9 +4,9 @@ This program is intended to demonstrate a 2D N-body simulation of particles in a
 
 ## Usage 
 
-- It is necessary to have the cuda_by_example folder downloaded to your local system, as the program has dependencies from files in the "common" folder
+- It is necessary to have the cuda_by_example folder downloaded to your local system, as the program has dependencies from files in the "common" folder. To compile the code without issue, the cuda_by_example folder should be present at the same level as galaxy.cu and galaxy_seq.cu
 - It is necessary to have an input CSV file including the following information: id, x_pos, x_vel, y_pos, y_vel, mass
-- The program uses"bodies.csv" file by default 
+- The program uses "bodies.csv" file by default 
  
 To run the parallel implementation of our program,
  
