@@ -10,17 +10,17 @@ This program is intended to demonstrate a 2D N-body simulation of particles in a
  
 To run the parallel implementation of our program,
  
-bash$ module load cuda
-bash$ module load virtualgl
-bash$ nvcc galaxy.cu -lm -lGL -lGLU -lglut
-bash$ ./a.out 
+bash$ module load cuda <br />
+bash$ module load virtualgl <br />
+bash$ nvcc galaxy.cu -lm -lGL -lGLU -lglut <br />
+bash$ ./a.out <br />
 
 To run the sequential implementation of our program, 
 
-bash$ module load cuda
-bash$ module load virtualgl
-bash$ nvcc galaxy_seq.cu -lm -lGL -lGLU -lglut
-bash$ ./a.out 
+bash$ module load cuda <br />
+bash$ module load virtualgl <br />
+bash$ nvcc galaxy_seq.cu -lm -lGL -lGLU -lglut <br />
+bash$ ./a.out <br />
 
 
  
